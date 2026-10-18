@@ -1,10 +1,12 @@
 import 'prediction.dart';
+import 'screening_result.dart';
 
 class ScanRecord {
   final String id;
   final DateTime timestamp;
   final HealthSummary summary;
   final List<Prediction> predictions;
+  final ScreeningResult? screening;
   final String note;
 
   const ScanRecord({
@@ -12,10 +14,19 @@ class ScanRecord {
     required this.timestamp,
     required this.summary,
     required this.predictions,
+    this.screening,
     this.note = '',
   });
 
   factory ScanRecord.fromJson(Map<String, dynamic> json) {
+    ScreeningResult? screening;
+    final scr = json['screening'];
+    if (scr is Map) {
+      try {
+        screening = ScreeningResult.fromJson(scr.cast<String, dynamic>());
+      } catch (_) {}
+    }
+
     return ScanRecord(
       id: json['id'] as String? ?? '',
       timestamp:
@@ -27,6 +38,7 @@ class ScanRecord {
       predictions: ((json['predictions'] as List?) ?? [])
           .map((p) => Prediction.fromJson((p as Map).cast<String, dynamic>()))
           .toList(),
+      screening: screening,
       note: json['note'] as String? ?? '',
     );
   }
@@ -53,9 +65,27 @@ class ScanRecord {
           },
         )
         .toList(),
+    if (screening != null)
+      'screening': {
+        'level': screening!.level,
+        'headline': screening!.headline,
+        'message': screening!.message,
+        'disclaimer': screening!.disclaimer,
+        'recommendations': screening!.recommendations,
+        'findings': screening!.findings
+            .map(
+              (f) => {
+                'id': f.id,
+                'label': f.label,
+                'detail': f.detail,
+                'source': f.source,
+              },
+            )
+            .toList(),
+      },
   };
 
-  /// Raw API shape (used when re-opening a scan in ResultsScreen).
+  /// Raw API shape used when re-opening a scan in ResultsScreen.
   Map<String, dynamic> toApiShape() => {
     'summary': {
       'score': summary.score,
@@ -82,10 +112,12 @@ class ScanRecord {
     timestamp: timestamp,
     summary: summary,
     predictions: predictions,
+    screening: screening,
     note: note ?? this.note,
   );
 
   bool get hasNote => note.trim().isNotEmpty;
+  bool get hasScreening => screening != null;
 
   String get dateLabel {
     final now = DateTime.now();

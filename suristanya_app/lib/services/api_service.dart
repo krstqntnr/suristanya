@@ -1,25 +1,38 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+
+import '../models/screening_result.dart';
+import 'api_settings.dart';
+import 'auth_store.dart';
 
 /// Central API client for the Suristanya Flask backend.
 class ApiService {
   ApiService._();
   static final ApiService instance = ApiService._();
 
-  /// Base URL depends on where Flutter is running.
-  ///
-  /// - Web (Chrome):        `http://localhost:5000`
-  /// - Android emulator:    `http://10.0.2.2:5000`
-  /// - Real device (LAN):   `http://<your-pc-ip>:5000` (e.g. `http://192.168.1.10:5000`)
-  static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5000';
-    try {
-      if (Platform.isAndroid) return 'http://10.0.2.2:5000';
-    } catch (_) {}
-    return 'http://localhost:5000';
+  static String get baseUrl => ApiSettings.instance.baseUrl;
+
+  // Added ngrok-skip-browser-warning to prevent ngrok from blocking API calls
+  Map<String, String> _jsonHeaders() {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    };
+    final token = AuthStore.instance.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  Map<String, String> _authHeaders() {
+    final headers = <String, String>{'ngrok-skip-browser-warning': 'true'};
+    final token = AuthStore.instance.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
   }
 
   // ─── AUTH ────────────────────────────────────────────────────
@@ -31,7 +44,7 @@ class ApiService {
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/signup'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _jsonHeaders(),
       body: jsonEncode({'name': name, 'email': email, 'password': password}),
     );
     return _parseAuth(res);
@@ -43,7 +56,7 @@ class ApiService {
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/signin'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _jsonHeaders(),
       body: jsonEncode({'email': email, 'password': password}),
     );
     return _parseAuth(res);
@@ -52,8 +65,16 @@ class ApiService {
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/forgot'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _jsonHeaders(),
       body: jsonEncode({'email': email}),
+    );
+    return _decode(res);
+  }
+
+  Future<Map<String, dynamic>> me() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/auth/me'),
+      headers: _authHeaders(),
     );
     return _decode(res);
   }
@@ -66,7 +87,7 @@ class ApiService {
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/chat/'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _jsonHeaders(),
       body: jsonEncode({'message': message, 'history': history}),
     );
     final data = _decode(res);
@@ -76,6 +97,25 @@ class ApiService {
       intent: data['intent'] as String?,
       confidence: (data['confidence'] as num?)?.toDouble() ?? 0.0,
     );
+  }
+
+  // ─── SCREEN (rule engine) ────────────────────────────────────
+
+  Future<ScreeningResult> assessScreen(Map<String, dynamic> payload) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/screen/assess'),
+      headers: _jsonHeaders(),
+      body: jsonEncode(payload),
+    );
+    return ScreeningResult.fromJson(_decode(res));
+  }
+
+  Future<Map<String, dynamic>> screenSchema() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/screen/schema'),
+      headers: _authHeaders(),
+    );
+    return _decode(res);
   }
 
   // ─── PREDICT ─────────────────────────────────────────────────
@@ -88,6 +128,13 @@ class ApiService {
       Uri.parse('$baseUrl/predict/'),
     );
 
+    request.headers['ngrok-skip-browser-warning'] = 'true';
+    
+    final token = AuthStore.instance.token;
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+
     images.forEach((key, bytes) {
       request.files.add(
         http.MultipartFile.fromBytes(key, bytes, filename: '$key.jpg'),
@@ -99,20 +146,89 @@ class ApiService {
     return _decode(res);
   }
 
+  // ─── SCANS (history) ─────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> listScans({int limit = 50}) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/scans?limit=$limit'),
+      headers: _authHeaders(),
+    );
+    final data = _decode(res);
+    final list = (data['scans'] as List?) ?? const [];
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  Future<Map<String, dynamic>> createScan({
+    required Map<String, dynamic> summary,
+    required List<Map<String, dynamic>> predictions,
+    Map<String, dynamic>? screening,
+    String note = '',
+    String? timestamp,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/scans'),
+      headers: _jsonHeaders(),
+      body: jsonEncode({
+        'summary': summary,
+        'predictions': predictions,
+        'screening': screening,
+        'note': note,
+        'timestamp': timestamp,
+      }),
+    );
+    return _decode(res);
+  }
+
+  Future<Map<String, dynamic>> updateScanNote(String id, String note) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/scans/$id'),
+      headers: _jsonHeaders(),
+      body: jsonEncode({'note': note}),
+    );
+    return _decode(res);
+  }
+
+  Future<void> deleteScan(String id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/scans/$id'),
+      headers: _authHeaders(),
+    );
+    if (res.statusCode >= 400) {
+      final data = _decode(res);
+      throw ApiException(
+        (data['error'] as String?) ?? 'Delete failed (${res.statusCode})',
+      );
+    }
+  }
+
+  Future<void> clearScans() async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/scans'),
+      headers: _authHeaders(),
+    );
+    if (res.statusCode >= 400) {
+      final data = _decode(res);
+      throw ApiException(
+        (data['error'] as String?) ?? 'Clear failed (${res.statusCode})',
+      );
+    }
+  }
+
   // ─── HELPERS ─────────────────────────────────────────────────
 
   AuthResult _parseAuth(http.Response res) {
     final data = _decode(res);
     if (res.statusCode >= 400) {
       throw ApiException(
-        data['error'] as String? ?? 'Request failed (${res.statusCode})',
+        (data['error'] as String?) ?? 'Request failed (${res.statusCode})',
       );
     }
+    final user = (data['user'] as Map?)?.cast<String, dynamic>() ?? {};
     return AuthResult(
       token: data['token'] as String? ?? '',
-      userId: (data['user']?['id'] as String?) ?? '',
-      name: (data['user']?['name'] as String?) ?? '',
-      email: (data['user']?['email'] as String?) ?? '',
+      userId: user['id'] as String? ?? '',
+      name: user['name'] as String? ?? '',
+      email: user['email'] as String? ?? '',
     );
   }
 

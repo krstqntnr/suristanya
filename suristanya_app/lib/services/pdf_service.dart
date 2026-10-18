@@ -4,14 +4,15 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/prediction.dart';
+import '../models/screening_result.dart';
 
 class PdfService {
   PdfService._();
 
-  /// Builds a professional-looking PDF report from a scan response.
   static Future<Uint8List> buildReport({
     required HealthSummary summary,
     required List<Prediction> predictions,
+    ScreeningResult? screening,
     required DateTime generatedAt,
   }) async {
     final doc = pw.Document(
@@ -20,7 +21,6 @@ class PdfService {
       creator: 'Suristanya App',
     );
 
-    // Brand colors
     const navy = PdfColor.fromInt(0xFF1E3A8A);
     const cyan = PdfColor.fromInt(0xFF06B6D4);
     const success = PdfColor.fromInt(0xFF10B981);
@@ -36,6 +36,19 @@ class PdfService {
           return danger;
         case 'moderate':
           return warning;
+        default:
+          return success;
+      }
+    }
+
+    PdfColor screeningAccent(ScreeningResult s) {
+      switch (s.severityRank) {
+        case 3:
+          return danger;
+        case 2:
+          return warning;
+        case 1:
+          return cyan;
         default:
           return success;
       }
@@ -144,9 +157,142 @@ class PdfService {
           ),
           pw.SizedBox(height: 24),
 
-          // ── Summary paragraph ─────────────────────
+          // ── SCREENING section ─────────────────────
+          if (screening != null) ...[
+            pw.Text(
+              'Clinical Screening',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+                color: navy,
+              ),
+            ),
+            pw.SizedBox(height: 6),
+
+            // Headline card
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: bg,
+                border: pw.Border.all(
+                  color: screeningAccent(screening),
+                  width: 1.2,
+                ),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    screening.headline,
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                      color: screeningAccent(screening),
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    screening.message,
+                    style: const pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfColors.black,
+                      lineSpacing: 2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+
+            // Findings
+            ...screening.findings.map((f) {
+              return pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 8),
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: border, width: 1),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      f.label,
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      f.detail,
+                      style: const pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColors.black,
+                        lineSpacing: 2,
+                      ),
+                    ),
+                    if (f.source.isNotEmpty) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Source: ${f.source}',
+                        style: const pw.TextStyle(
+                          fontSize: 8,
+                          color: muted,
+                          fontStyle: pw.FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+
+            // Recommendations
+            if (screening.recommendations.isNotEmpty) ...[
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Recommended Steps',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: navy,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              ...screening.recommendations.map(
+                (r) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 2),
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        '•  ',
+                        style: const pw.TextStyle(fontSize: 10, color: navy),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          r,
+                          style: const pw.TextStyle(
+                            fontSize: 10,
+                            color: PdfColors.black,
+                            lineSpacing: 2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            pw.SizedBox(height: 20),
+          ],
+
+          // ── Image Analysis section ────────────────
           pw.Text(
-            'Summary',
+            'Image Analysis',
             style: pw.TextStyle(
               fontSize: 14,
               fontWeight: pw.FontWeight.bold,
@@ -163,24 +309,23 @@ class PdfService {
             child: pw.Text(
               _summaryText(summary),
               style: const pw.TextStyle(
-                fontSize: 11,
+                fontSize: 10,
                 color: PdfColors.black,
                 lineSpacing: 2,
               ),
             ),
           ),
-          pw.SizedBox(height: 24),
+          pw.SizedBox(height: 12),
 
-          // ── Detailed findings ─────────────────────
           pw.Text(
             'Detailed Findings',
             style: pw.TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: pw.FontWeight.bold,
               color: navy,
             ),
           ),
-          pw.SizedBox(height: 10),
+          pw.SizedBox(height: 8),
 
           ...predictions.asMap().entries.map((entry) {
             final i = entry.key + 1;
@@ -197,7 +342,6 @@ class PdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  // Title row
                   pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
@@ -260,17 +404,12 @@ class PdfService {
                     ],
                   ),
                   pw.SizedBox(height: 8),
-
-                  // Confidence bar (built with Row + flex since pdf
-                  // package has no FractionallySizedBox)
                   _progressBar(
                     value: p.confidence.clamp(0.0, 1.0),
                     color: color,
                     background: border,
                   ),
                   pw.SizedBox(height: 8),
-
-                  // Description
                   pw.Text(
                     p.description,
                     style: const pw.TextStyle(
@@ -279,8 +418,6 @@ class PdfService {
                       lineSpacing: 2,
                     ),
                   ),
-
-                  // Source
                   if (p.detectedFrom.isNotEmpty) ...[
                     pw.SizedBox(height: 6),
                     pw.Text(
@@ -292,8 +429,6 @@ class PdfService {
                       ),
                     ),
                   ],
-
-                  // Recommendations
                   if (p.recommendations.isNotEmpty) ...[
                     pw.SizedBox(height: 8),
                     pw.Container(
@@ -389,8 +524,6 @@ class PdfService {
           ),
 
           pw.SizedBox(height: 16),
-
-          // ── Footer ────────────────────────────────
           pw.Center(
             child: pw.Text(
               'Generated by Suristanya  ·  Not a medical diagnosis',
@@ -404,14 +537,11 @@ class PdfService {
     return doc.save();
   }
 
-  /// Simple progress bar using Row + flex (pdf package has no
-  /// FractionallySizedBox, so we approximate with flex ratios).
   static pw.Widget _progressBar({
     required double value,
     required PdfColor color,
     required PdfColor background,
   }) {
-    // Use a scale factor to preserve precision with integer flex.
     final filled = (value.clamp(0.0, 1.0) * 1000).round();
     final empty = 1000 - filled;
 

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/prediction.dart';
-import '../models/scan_record.dart';
-import '../services/scan_history_store.dart';
+import '../models/screening_result.dart';
 import '../theme/app_theme.dart';
 import '../widgets/result_card.dart';
 
@@ -19,8 +18,36 @@ class ResultsScreen extends StatelessWidget {
       );
     }
 
-    final summaryJson = args['summary'] as Map<String, dynamic>?;
-    final predictionsJson = args['predictions'] as List?;
+    // Support both shapes:
+    //   new: {predictions: {...}, screening: {...} | null}
+    //   legacy (from history): {summary: {...}, predictions: [...]}
+    Map<String, dynamic>? predictionsResponse;
+    ScreeningResult? screening;
+
+    if (args['predictions'] is Map) {
+      predictionsResponse = (args['predictions'] as Map)
+          .cast<String, dynamic>();
+      final scr = args['screening'];
+      if (scr is ScreeningResult) {
+        screening = scr;
+      } else if (scr is Map) {
+        try {
+          screening = ScreeningResult.fromJson(scr.cast<String, dynamic>());
+        } catch (_) {
+          screening = null;
+        }
+      }
+    } else if (args['summary'] is Map) {
+      predictionsResponse = args;
+    }
+
+    if (predictionsResponse == null) {
+      return _scaffoldMessage('Malformed response from server.');
+    }
+
+    final summaryJson = (predictionsResponse['summary'] as Map?)
+        ?.cast<String, dynamic>();
+    final predictionsJson = predictionsResponse['predictions'] as List?;
 
     if (summaryJson == null || predictionsJson == null) {
       return _scaffoldMessage('Malformed response from server.');
@@ -28,45 +55,18 @@ class ResultsScreen extends StatelessWidget {
 
     final summary = HealthSummary.fromJson(summaryJson);
     final predictions = predictionsJson
-        .map((p) => Prediction.fromJson(p as Map<String, dynamic>))
+        .map((p) => Prediction.fromJson((p as Map).cast<String, dynamic>()))
         .toList();
 
-    if (predictions.isEmpty) {
-      return _scaffoldMessage('No predictions returned.');
-    }
-
-    // ── Comparison against the previous scan ────────────────────
-    // If this result was opened from history, the current record
-    // is already in the store. We want the record *before* it.
-    final records = ScanHistoryStore.instance.records;
-    ScanRecord? previous;
-    if (records.length >= 2) {
-      // Find the current one by matching score + status, then take
-      // the next-older record.
-      final currentIdx = records.indexWhere(
-        (r) =>
-            r.summary.score == summary.score &&
-            r.summary.status == summary.status,
-      );
-      if (currentIdx != -1 && currentIdx + 1 < records.length) {
-        previous = records[currentIdx + 1];
-      } else if (currentIdx == -1 && records.isNotEmpty) {
-        // Fresh scan opened before being saved? fall back to newest.
-        previous = records.first;
-      }
-    }
-
-    final delta = previous != null
-        ? summary.score - previous.summary.score
-        : null;
-
-    // ── Primary finding: highest severity ───────────────────────
+    // Primary finding = highest severity
     final severityRank = {'high': 3, 'moderate': 2, 'low': 1};
-    final primary = predictions.reduce((a, b) {
-      final ra = severityRank[a.severity.toLowerCase()] ?? 0;
-      final rb = severityRank[b.severity.toLowerCase()] ?? 0;
-      return ra >= rb ? a : b;
-    });
+    final primary = predictions.isEmpty
+        ? null
+        : predictions.reduce((a, b) {
+            final ra = severityRank[a.severity.toLowerCase()] ?? 0;
+            final rb = severityRank[b.severity.toLowerCase()] ?? 0;
+            return ra >= rb ? a : b;
+          });
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -87,13 +87,76 @@ class ResultsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── Comparison banner ───────────────────────
-              if (delta != null) ...[
-                _ComparisonBanner(delta: delta),
-                const SizedBox(height: 12),
+              // ── SCREENING (rule engine) section ─────────
+              if (screening != null) ...[
+                _ScreeningCard(screening: screening),
+                const SizedBox(height: 20),
+                const _SectionLabel('Clinical Findings'),
+                const SizedBox(height: 10),
+                ...screening.findings.map(
+                  (f) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _FindingCard(finding: f),
+                  ),
+                ),
+                if (screening.recommendations.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const _SectionLabel('Recommended Steps'),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: screening.recommendations
+                          .map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    margin: const EdgeInsets.only(top: 6),
+                                    width: 6,
+                                    height: 6,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      r,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textPrimary,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                const Divider(color: AppColors.border),
+                const SizedBox(height: 20),
               ],
 
-              // ── Hero score card ─────────────────────────
+              // ── IMAGE ANALYSIS section ──────────────────
+              const _SectionLabel('Image Analysis'),
+              const SizedBox(height: 10),
+
+              // Hero score card
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -225,13 +288,13 @@ class ResultsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // ── Key findings ────────────────────────────
+              // Key findings header
               Row(
                 children: [
                   const Text(
                     'Key Findings',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,
                     ),
@@ -247,7 +310,7 @@ class ResultsScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
               ...predictions.map(
                 (p) => Padding(
@@ -258,9 +321,9 @@ class ResultsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
 
-              // ── Disclaimer ──────────────────────────────
+              // Disclaimer
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -294,7 +357,7 @@ class ResultsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // ── Actions ─────────────────────────────────
+              // Actions
               Row(
                 children: [
                   Expanded(
@@ -355,88 +418,199 @@ class ResultsScreen extends StatelessWidget {
   }
 }
 
-/// Banner that shows up at the top of results when there's a previous scan.
-class _ComparisonBanner extends StatelessWidget {
-  final int delta;
-  const _ComparisonBanner({required this.delta});
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) {
-    final improved = delta > 0;
-    final noChange = delta == 0;
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.3,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+}
 
-    final bg = noChange
-        ? AppColors.border.withValues(alpha: 0.4)
-        : improved
-        ? AppColors.success.withValues(alpha: 0.12)
-        : AppColors.warning.withValues(alpha: 0.14);
+/// Big colored card showing the rule-engine headline.
+class _ScreeningCard extends StatelessWidget {
+  final ScreeningResult screening;
+  const _ScreeningCard({required this.screening});
 
-    final fg = noChange
-        ? AppColors.textMuted
-        : improved
-        ? AppColors.success
-        : AppColors.warning;
+  Color get _accent {
+    switch (screening.severityRank) {
+      case 3:
+        return AppColors.danger;
+      case 2:
+        return AppColors.warning;
+      case 1:
+        return AppColors.accentDark;
+      default:
+        return AppColors.success;
+    }
+  }
 
-    final icon = noChange
-        ? Icons.trending_flat_rounded
-        : improved
-        ? Icons.trending_up_rounded
-        : Icons.trending_down_rounded;
+  IconData get _icon {
+    switch (screening.severityRank) {
+      case 3:
+        return Icons.warning_amber_rounded;
+      case 2:
+        return Icons.priority_high_rounded;
+      case 1:
+        return Icons.info_outline_rounded;
+      default:
+        return Icons.check_circle_rounded;
+    }
+  }
 
-    final headline = noChange
-        ? 'No change since your last scan'
-        : improved
-        ? 'Your score improved by $delta points'
-        : 'Your score dropped by ${delta.abs()} points';
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _accent.withValues(alpha: 0.4), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _accent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(_icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'SCREENING RESULT',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      screening.headline,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: _accent,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            screening.message,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textPrimary,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    final sub = noChange
-        ? 'Keep it up — consistency is key.'
-        : improved
-        ? 'Nice work! Keep up the healthy habits.'
-        : 'Consider reviewing your recent scans for details.';
+/// One rule-engine finding, with its citation.
+class _FindingCard extends StatelessWidget {
+  final ScreeningFinding finding;
+  const _FindingCard({required this.finding});
 
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: bg,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: fg.withValues(alpha: 0.25)),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: fg.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 22, color: fg),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  headline,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: fg,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  sub,
+          Row(
+            children: [
+              const Icon(
+                Icons.fact_check_outlined,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  finding.label,
                   style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            finding.detail,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textPrimary,
+              height: 1.5,
             ),
           ),
+          if (finding.source.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.menu_book_rounded,
+                    size: 12,
+                    color: AppColors.accentDark,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      finding.source,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.accentDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

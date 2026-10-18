@@ -32,9 +32,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Delete this scan?',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
@@ -76,9 +74,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Clear all history?',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
@@ -119,9 +115,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final result = await showDialog<String?>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(
@@ -132,10 +126,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             const SizedBox(width: 8),
             Text(
               record.hasNote ? 'Edit note' : 'Add note',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -196,9 +187,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            result.trim().isEmpty ? 'Note cleared' : 'Note saved',
-          ),
+          content: Text(result.trim().isEmpty ? 'Note cleared' : 'Note saved'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.success,
         ),
@@ -335,7 +324,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         : (delta < 0 ? AppColors.danger : AppColors.textMuted);
     final deltaIcon = delta > 0
         ? Icons.trending_up_rounded
-        : (delta < 0 ? Icons.trending_down_rounded : Icons.trending_flat_rounded);
+        : (delta < 0
+              ? Icons.trending_down_rounded
+              : Icons.trending_flat_rounded);
     final deltaLabel = delta > 0
         ? '+$delta'
         : (delta < 0 ? '$delta' : 'No change');
@@ -470,10 +461,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           if (records.length >= 3) ...[
             const SizedBox(height: 16),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
@@ -493,8 +481,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       overallDelta > 0
                           ? 'You\'ve improved by $overallDelta points since your first scan.'
                           : overallDelta < 0
-                              ? 'Your score is ${overallDelta.abs()} points lower than your first scan.'
-                              : 'Your score is stable since your first scan.',
+                          ? 'Your score is ${overallDelta.abs()} points lower than your first scan.'
+                          : 'Your score is stable since your first scan.',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -541,10 +529,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           color: AppColors.danger,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Icon(
-          Icons.delete_outline_rounded,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
       child: Material(
         color: Colors.white,
@@ -554,7 +539,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
           onTap: () => Navigator.pushNamed(
             context,
             '/results',
-            arguments: r.toApiShape(),
+            arguments: {
+              'predictions': r.toApiShape(),
+              'screening': r.screening,
+            },
           ),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -580,8 +568,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               value: r.summary.score / 100,
                               strokeWidth: 5,
                               backgroundColor: AppColors.border,
-                              valueColor:
-                                  AlwaysStoppedAnimation(statusColor),
+                              valueColor: AlwaysStoppedAnimation(statusColor),
                               strokeCap: StrokeCap.round,
                             ),
                           ),
@@ -610,7 +597,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -631,7 +621,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
                               Text(
                                 '${r.predictions.length} markers',
                                 style: const TextStyle(
@@ -639,6 +628,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   color: AppColors.textMuted,
                                 ),
                               ),
+                              if (r.hasScreening)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'Screened',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ],
@@ -654,8 +665,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           color: delta > 0
                               ? AppColors.success.withValues(alpha: 0.12)
                               : delta < 0
-                                  ? AppColors.danger.withValues(alpha: 0.12)
-                                  : AppColors.border.withValues(alpha: 0.5),
+                              ? AppColors.danger.withValues(alpha: 0.12)
+                              : AppColors.border.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -665,14 +676,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               delta > 0
                                   ? Icons.arrow_upward_rounded
                                   : delta < 0
-                                      ? Icons.arrow_downward_rounded
-                                      : Icons.remove_rounded,
+                                  ? Icons.arrow_downward_rounded
+                                  : Icons.remove_rounded,
                               size: 11,
                               color: delta > 0
                                   ? AppColors.success
                                   : delta < 0
-                                      ? AppColors.danger
-                                      : AppColors.textMuted,
+                                  ? AppColors.danger
+                                  : AppColors.textMuted,
                             ),
                             const SizedBox(width: 2),
                             Text(
@@ -683,8 +694,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 color: delta > 0
                                     ? AppColors.success
                                     : delta < 0
-                                        ? AppColors.danger
-                                        : AppColors.textMuted,
+                                    ? AppColors.danger
+                                    : AppColors.textMuted,
                               ),
                             ),
                           ],
@@ -807,7 +818,12 @@ class _SparklinePainter extends CustomPainter {
       final prev = points[i - 1];
       final curr = points[i];
       final midX = (prev.dx + curr.dx) / 2;
-      linePath.quadraticBezierTo(prev.dx, prev.dy, midX, (prev.dy + curr.dy) / 2);
+      linePath.quadraticBezierTo(
+        prev.dx,
+        prev.dy,
+        midX,
+        (prev.dy + curr.dy) / 2,
+      );
       linePath.quadraticBezierTo(curr.dx, curr.dy, curr.dx, curr.dy);
     }
     canvas.drawPath(linePath, linePaint);

@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/body_scan.dart';
+import '../models/screening_result.dart';
 import '../services/api_service.dart';
 import '../services/scan_history_store.dart';
+import '../services/screening_session.dart';
 import '../theme/app_theme.dart';
 
 class ProcessingScreen extends StatefulWidget {
@@ -23,14 +25,15 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   int _progress = 0;
   int _stepIndex = 0;
 
-  Map<String, dynamic>? _apiResult;
+  Map<String, dynamic>? _predictionResponse;
+  ScreeningResult? _screeningResponse;
   String? _error;
   bool _started = false;
 
   static const _steps = [
     'Uploading images...',
-    'Preprocessing data...',
     'Running AI diagnostics...',
+    'Applying clinical rules...',
     'Evaluating health markers...',
     'Preparing your insights...',
   ];
@@ -44,7 +47,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     )..repeat();
 
     _startProgress();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _runPrediction());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runAll());
   }
 
   void _startProgress() {
@@ -63,7 +66,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     });
   }
 
-  Future<void> _runPrediction() async {
+  Future<void> _runAll() async {
     if (_started) return;
     _started = true;
 
@@ -74,20 +77,39 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     }
 
     try {
+      // 1. Read image bytes
       final imageBytes = <String, List<int>>{};
       for (final entry in args.entries) {
         final bytes = await entry.value.readAsBytes();
         imageBytes[entry.key.apiKey] = bytes;
       }
 
-      final response =
-          await ApiService.instance.predictFromBytes(images: imageBytes);
+      // 2. Run ML prediction (image analysis)
+      final predictionResponse = await ApiService.instance.predictFromBytes(
+        images: imageBytes,
+      );
 
-      // Save to local history
-      await ScanHistoryStore.instance.add(apiResponse: response);
+      // 3. Run clinical rule engine (questionnaire + labs)
+      ScreeningResult? screeningResponse;
+      try {
+        screeningResponse = await ApiService.instance.assessScreen(
+          ScreeningSession.instance.toJson(),
+        );
+      } catch (_) {
+        screeningResponse = null;
+      }
+
+      // 4. Save to history (with screening if available)
+      await ScanHistoryStore.instance.add(
+        apiResponse: predictionResponse,
+        screening: screeningResponse,
+      );
 
       if (!mounted) return;
-      setState(() => _apiResult = response);
+      setState(() {
+        _predictionResponse = predictionResponse;
+        _screeningResponse = screeningResponse;
+      });
       _tryNavigate();
     } catch (e) {
       if (!mounted) return;
@@ -99,12 +121,15 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     if (!mounted) return;
     if (_error != null) return;
     if (_progress < 100) return;
-    if (_apiResult == null) return;
+    if (_predictionResponse == null) return;
 
     Navigator.pushReplacementNamed(
       context,
       '/results',
-      arguments: _apiResult,
+      arguments: {
+        'predictions': _predictionResponse,
+        'screening': _screeningResponse,
+      },
     );
   }
 
@@ -123,9 +148,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.primaryDark,
-      body: SafeArea(
-        child: _error != null ? _buildError() : _buildLoading(),
-      ),
+      body: SafeArea(child: _error != null ? _buildError() : _buildLoading()),
     );
   }
 
@@ -227,8 +250,9 @@ class _ProcessingScreenState extends State<ProcessingScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: AppColors.accent
-                                .withValues(alpha: 0.15 + i * 0.08),
+                            color: AppColors.accent.withValues(
+                              alpha: 0.15 + i * 0.08,
+                            ),
                             width: 1.5,
                           ),
                         ),
@@ -258,10 +282,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppColors.accent.withValues(alpha: 0.15),
-                        border: Border.all(
-                          color: AppColors.accent,
-                          width: 2,
-                        ),
+                        border: Border.all(color: AppColors.accent, width: 2),
                       ),
                       child: const Icon(
                         Icons.auto_awesome_rounded,
@@ -325,22 +346,17 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     ];
     const radius = 100.0;
     return List.generate(icons.length, (i) {
-      final angle = _controller.value * 2 * math.pi +
-          (i * 2 * math.pi / icons.length);
+      final angle =
+          _controller.value * 2 * math.pi + (i * 2 * math.pi / icons.length);
       return Transform.translate(
-        offset: Offset(
-          radius * math.cos(angle),
-          radius * math.sin(angle),
-        ),
+        offset: Offset(radius * math.cos(angle), radius * math.sin(angle)),
         child: Container(
           width: 32,
           height: 32,
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(
-              color: AppColors.accent.withValues(alpha: 0.5),
-            ),
+            border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
           ),
           child: Icon(
             icons[i],

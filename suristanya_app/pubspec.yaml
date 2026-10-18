@@ -16,6 +16,10 @@ dependencies:
   shared_preferences: ^2.3.2
   pdf: ^3.11.1
   printing: ^5.13.4
+  camera: ^0.11.0+2
+  image: ^4.2.0
+  path_provider: ^2.1.5
+  
 
 dev_dependencies:
   flutter_test:
@@ -23,9 +27,12 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.1
   flutter_native_splash: ^2.4.3
+  win_plugin_link_repair: ^0.1.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/guides/
 
 # ─── APP ICON ─────────────────────────────────────────────
 # Uncomment these AFTER you create assets/icon/icon.png

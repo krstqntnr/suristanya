@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/api_service.dart';
+import '../services/screening_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_bubble.dart';
 
@@ -16,61 +18,61 @@ class _ChatMessage {
   _ChatMessage(this.text, this.role);
 }
 
-class _SymptomQuestion {
-  final String text;
-  const _SymptomQuestion(this.text);
-}
-
-const List<_SymptomQuestion> _questions = [
-  _SymptomQuestion("Have you been feeling unusually tired or fatigued lately?"),
-  _SymptomQuestion(
-    "Have you noticed paleness in your skin, palms, or lower eyelids?",
-  ),
-  _SymptomQuestion(
-    "Do you get short of breath easily, even with light activity?",
-  ),
-  _SymptomQuestion("Do you feel dizzy or lightheaded often?"),
-  _SymptomQuestion("Are your hands and feet often cold?"),
-  _SymptomQuestion("Do you get frequent headaches?"),
-  _SymptomQuestion("Have you noticed your heartbeat racing or pounding?"),
-  _SymptomQuestion(
-    "Are your nails brittle, spoon-shaped, or unusually ridged?",
-  ),
-  _SymptomQuestion("Does your tongue feel sore, smooth, or unusually pale?"),
-];
-
-enum _Stage { questionnaire, completed }
+enum _Stage { sex, pregnancy, age, symptoms, riskFactors, complete }
 
 class _ChatbotScreenState extends State<ChatbotScreen> {
-  final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
-  final List<_ChatMessage> _messages = [
-    _ChatMessage(
-      "Hi! I'm Ava 🌿 your health assistant.\n\nI'll ask you a few quick questions about common anemia symptoms, then guide you to a body scan.",
-      ChatRole.bot,
-    ),
-  ];
-
-  final List<String> _answers = [];
-  int _currentQuestion = 0;
-  _Stage _stage = _Stage.questionnaire;
+  final TextEditingController _freeText = TextEditingController();
+  final List<_ChatMessage> _messages = [];
+  _Stage _stage = _Stage.sex;
   bool _isTyping = false;
+
+  ScreeningSession get _session => ScreeningSession.instance;
+
+  static const _symptomLabels = {
+    'fatigue': 'Fatigue or tiredness',
+    'pallor': 'Pale skin, palms, or eyelids',
+    'shortness_of_breath': 'Shortness of breath',
+    'pica': 'Craving non-food items',
+    'restless_legs': 'Restless legs at night',
+    'hair_loss': 'Hair thinning or loss',
+    'dizziness': 'Dizziness or lightheadedness',
+    'cold_extremities': 'Cold hands and feet',
+    'headache': 'Frequent headaches',
+    'palpitations': 'Racing or pounding heartbeat',
+    'smooth_tongue': 'Smooth or sore tongue',
+    'brittle_nails': 'Brittle or ridged nails',
+  };
+
+  static const _riskLabels = {
+    'heavy_menstruation': 'Heavy menstrual bleeding',
+    'pregnancy': 'Currently pregnant',
+    'gi_bleeding_history': 'History of GI bleeding',
+    'nsaid_use': 'Regular NSAID use',
+    'celiac': 'Celiac disease',
+    'ibd': 'Inflammatory bowel disease',
+    'bariatric_surgery': 'Bariatric surgery',
+    'vegan_vegetarian': 'Vegan or vegetarian diet',
+    'frequent_blood_donation': 'Frequent blood donation',
+    'ckd': 'Chronic kidney disease',
+    'heart_failure': 'Heart failure',
+  };
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _askCurrentQuestion();
-    });
+    _session.reset();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
   @override
   void dispose() {
-    _controller.dispose();
     _scrollController.dispose();
+    _freeText.dispose();
     super.dispose();
   }
+
+  // ─── Scrolling ──────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,119 +86,207 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
-  void _askCurrentQuestion() {
-    if (_currentQuestion >= _questions.length) {
-      _completeQuestionnaire();
-      return;
-    }
+  // ─── Bot messages ───────────────────────────────────────────
 
+  Future<void> _botSay(String text, {int delayMs = 500}) async {
     setState(() => _isTyping = true);
     _scrollToBottom();
+    await Future.delayed(Duration(milliseconds: delayMs));
+    if (!mounted) return;
+    setState(() {
+      _isTyping = false;
+      _messages.add(_ChatMessage(text, ChatRole.bot));
+    });
+    _scrollToBottom();
+  }
 
-    Future.delayed(const Duration(milliseconds: 600), () {
+  Future<void> _bootstrap() async {
+    await _botSay(
+      "Hi! I'm Ava 🌿 your screening assistant.\n\n"
+      "I'll ask a few questions about your health and risk factors, then guide you to a body scan. "
+      "You can also type any question at any time — I'm here to help.",
+      delayMs: 300,
+    );
+    await _botSay("First, what is your biological sex?");
+  }
+
+  // ─── Questionnaire actions ──────────────────────────────────
+
+  void _pickSex(String value) {
+    _session.sex = value == 'Male'
+        ? 'male'
+        : value == 'Female'
+        ? 'female'
+        : null;
+    setState(() => _messages.add(_ChatMessage(value, ChatRole.user)));
+    _scrollToBottom();
+
+    if (value == 'Female') {
+      _stage = _Stage.pregnancy;
+      _botSay("Are you currently pregnant?");
+    } else {
+      _stage = _Stage.age;
+      _botSay("What is your age range?");
+    }
+  }
+
+  void _pickPregnancy(String value) {
+    _session.pregnant = value == 'Yes';
+    setState(() => _messages.add(_ChatMessage(value, ChatRole.user)));
+    _scrollToBottom();
+    _stage = _Stage.age;
+    _botSay("What is your age range?");
+  }
+
+  void _pickAge(String label, int? ageValue) {
+    _session.age = ageValue;
+    setState(() => _messages.add(_ChatMessage(label, ChatRole.user)));
+    _scrollToBottom();
+    _stage = _Stage.symptoms;
+    _botSay(
+      "Do you have any of these symptoms? Select all that apply, then tap Continue.",
+    );
+  }
+
+  void _submitSymptoms() {
+    final picked = _session.symptoms;
+    setState(() {
+      _messages.add(
+        _ChatMessage(
+          picked.isEmpty
+              ? 'None of these'
+              : picked.map((k) => _symptomLabels[k] ?? k).join(', '),
+          ChatRole.user,
+        ),
+      );
+    });
+    _scrollToBottom();
+    _stage = _Stage.riskFactors;
+    _botSay("Do you have any of these risk factors? Select all that apply.");
+  }
+
+  void _submitRiskFactors() {
+    final picked = _session.riskFactors;
+    setState(() {
+      _messages.add(
+        _ChatMessage(
+          picked.isEmpty
+              ? 'None of these'
+              : picked.map((k) => _riskLabels[k] ?? k).join(', '),
+          ChatRole.user,
+        ),
+      );
+    });
+    _scrollToBottom();
+    _stage = _Stage.complete;
+    _botSay(
+      "Thanks! I have enough to run your screening. 🌿\n\n"
+      "You can add lab values if you have them, or skip straight to the body scan.",
+    );
+  }
+
+  // ─── Free-text chatbot ──────────────────────────────────────
+
+  List<Map<String, String>> _buildHistory() {
+    return _messages
+        .map(
+          (m) => {
+            'role': m.role == ChatRole.user ? 'user' : 'bot',
+            'text': m.text,
+          },
+        )
+        .toList();
+  }
+
+  /// Whether to re-ask the current question after a free-form
+  /// question. Only for chip-based stages — the multi-select panels
+  /// are self-explanatory.
+  bool get _shouldReAsk {
+    switch (_stage) {
+      case _Stage.sex:
+      case _Stage.pregnancy:
+      case _Stage.age:
+        return true;
+      case _Stage.symptoms:
+      case _Stage.riskFactors:
+      case _Stage.complete:
+        return false;
+    }
+  }
+
+  String _currentQuestionPrompt() {
+    switch (_stage) {
+      case _Stage.sex:
+        return "What is your biological sex?";
+      case _Stage.pregnancy:
+        return "Are you currently pregnant?";
+      case _Stage.age:
+        return "What is your age range?";
+      case _Stage.symptoms:
+        return "Do you have any of these symptoms?";
+      case _Stage.riskFactors:
+        return "Do you have any of these risk factors?";
+      case _Stage.complete:
+        return "";
+    }
+  }
+
+  Future<void> _handleFreeText() async {
+    final text = _freeText.text.trim();
+    if (text.isEmpty) return;
+
+    _freeText.clear();
+    setState(() {
+      _messages.add(_ChatMessage(text, ChatRole.user));
+      _isTyping = true;
+    });
+    _scrollToBottom();
+
+    try {
+      final reply = await ApiService.instance.chat(
+        message: text,
+        history: _buildHistory(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _isTyping = false;
+        _messages.add(_ChatMessage(reply.text, ChatRole.bot));
+      });
+      _scrollToBottom();
+
+      // Re-ask the current question after a short pause
+      if (_shouldReAsk) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
+        setState(() {
+          _messages.add(
+            _ChatMessage(
+              "Now, back to our screening — ${_currentQuestionPrompt()}",
+              ChatRole.bot,
+            ),
+          );
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _isTyping = false;
         _messages.add(
-          _ChatMessage(_questions[_currentQuestion].text, ChatRole.bot),
+          _ChatMessage(
+            "Sorry, I couldn't reach the server. Try asking again?",
+            ChatRole.bot,
+          ),
         );
       });
       _scrollToBottom();
-    });
-  }
-
-  void _answer(String value) {
-    if (_stage != _Stage.questionnaire) return;
-
-    setState(() {
-      _answers.add(value);
-      _messages.add(_ChatMessage(value, ChatRole.user));
-      _currentQuestion++;
-    });
-    _scrollToBottom();
-
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (!mounted) return;
-      _askCurrentQuestion();
-    });
-  }
-
-  void _completeQuestionnaire() {
-    final yesCount = _answers.where((a) => a.toLowerCase() == 'yes').length;
-    final total = _questions.length;
-
-    String summary;
-    if (yesCount == 0) {
-      summary = "Great — you didn't report any symptoms. A quick scan can still give you a baseline.";
-    } else if (yesCount <= 2) {
-      summary =
-          "You reported $yesCount symptom${yesCount == 1 ? '' : 's'}. It's worth a scan to look for subtle signs.";
-    } else if (yesCount <= 5) {
-      summary =
-          "You reported $yesCount symptoms — several overlap with anemia. I recommend doing a scan now.";
-    } else {
-      summary =
-          "You reported $yesCount symptoms. That's a lot — please do a scan, and consider seeing a doctor soon.";
     }
-
-    setState(() {
-      _stage = _Stage.completed;
-      _messages.add(
-        _ChatMessage(
-          "Thanks for answering all $total questions! 🌿\n\n$summary",
-          ChatRole.bot,
-        ),
-      );
-      _messages.add(
-        _ChatMessage(
-          "Tap Start Scan below to capture your tongue, palm, nail, and eye. It takes about a minute.",
-          ChatRole.bot,
-        ),
-      );
-    });
-    _scrollToBottom();
   }
 
-  void _restart() {
-    setState(() {
-      _answers.clear();
-      _currentQuestion = 0;
-      _stage = _Stage.questionnaire;
-      _messages.clear();
-      _messages.add(
-        _ChatMessage(
-          "Hi! I'm Ava 🌿 your health assistant.\n\nI'll ask you a few quick questions about common anemia symptoms, then guide you to a body scan.",
-          ChatRole.bot,
-        ),
-      );
-    });
-    _askCurrentQuestion();
-  }
-
-  List<String> get _quickReplies {
-    if (_stage == _Stage.questionnaire) {
-      return const ['Yes', 'No', 'Unsure'];
-    }
-    return const ['Start Scan', 'Restart questions'];
-  }
-
-  void _handleQuickReply(String value) {
-    if (value == 'Start Scan') {
-      Navigator.pushNamed(context, '/scan');
-      return;
-    }
-    if (value == 'Restart questions') {
-      _restart();
-      return;
-    }
-    _answer(value);
-  }
+  // ─── Build ──────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final total = _questions.length;
-    final progress = (_currentQuestion / total).clamp(0.0, 1.0);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -228,10 +318,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Column(
+            const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Ava',
                   style: TextStyle(
                     fontSize: 15,
@@ -239,86 +329,20 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.success,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Online',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Screening assistant',
+                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                 ),
               ],
             ),
           ],
         ),
         centerTitle: false,
-        actions: [
-          IconButton(
-            tooltip: 'Profile',
-            onPressed: () => Navigator.pushNamed(context, '/profile'),
-            icon: const Icon(Icons.person_outline_rounded),
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            // ── Progress bar (questionnaire only) ────────────
-            if (_stage == _Stage.questionnaire)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Anemia symptom check',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '${_currentQuestion.clamp(0, total)} / $total',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 5,
-                        color: AppColors.accent,
-                        backgroundColor: AppColors.border,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ── Messages ─────────────────────────────────────
+            // ── Messages ──────────────────────────────────
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
@@ -338,75 +362,270 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             ),
 
-            // ── Quick replies ────────────────────────────────
-            if (!_isTyping && _quickReplies.isNotEmpty)
-              SizedBox(
-                height: 40,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _quickReplies.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final label = _quickReplies[i];
-                    final isPrimary = label == 'Start Scan';
-                    return ActionChip(
-                      label: Text(label),
-                      onPressed: () => _handleQuickReply(label),
-                      backgroundColor: isPrimary
-                          ? AppColors.primary
-                          : Colors.white,
-                      side: BorderSide(
-                        color: isPrimary ? AppColors.primary : AppColors.border,
-                      ),
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isPrimary ? Colors.white : AppColors.textPrimary,
-                      ),
-                    );
-                  },
-                ),
-              ),
+            // ── Interactive panel (chips or multi-select) ─
+            if (!_isTyping) _buildInteractivePanel(),
 
-            // ── Status hint bar ──────────────────────────────
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: AppColors.border, width: 0.6),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _stage == _Stage.questionnaire
-                        ? Icons.touch_app_rounded
-                        : Icons.check_circle_rounded,
-                    size: 18,
-                    color: _stage == _Stage.questionnaire
-                        ? AppColors.accentDark
-                        : AppColors.success,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _stage == _Stage.questionnaire
-                          ? 'Tap Yes / No / Unsure above to answer'
-                          : 'All done — tap Start Scan above to continue',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // ── Text input (always visible) ───────────────
+            _buildTextInput(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildInteractivePanel() {
+    switch (_stage) {
+      case _Stage.sex:
+        return _chipRow([
+          ('Male', () => _pickSex('Male')),
+          ('Female', () => _pickSex('Female')),
+          ('Prefer not to say', () => _pickSex('Prefer not to say')),
+        ]);
+      case _Stage.pregnancy:
+        return _chipRow([
+          ('Yes', () => _pickPregnancy('Yes')),
+          ('No', () => _pickPregnancy('No')),
+        ]);
+      case _Stage.age:
+        return _chipRow([
+          ('Under 18', () => _pickAge('Under 18', 16)),
+          ('18–30', () => _pickAge('18–30', 25)),
+          ('31–50', () => _pickAge('31–50', 40)),
+          ('51–65', () => _pickAge('51–65', 58)),
+          ('65+', () => _pickAge('65+', 70)),
+        ]);
+      case _Stage.symptoms:
+        return _MultiSelectPanel(
+          title: 'Symptoms',
+          options: _symptomLabels,
+          selected: _session.symptoms,
+          onToggle: (key) => setState(() {
+            if (_session.symptoms.contains(key)) {
+              _session.symptoms.remove(key);
+            } else {
+              _session.symptoms.add(key);
+            }
+          }),
+          onContinue: _submitSymptoms,
+        );
+      case _Stage.riskFactors:
+        return _MultiSelectPanel(
+          title: 'Risk factors',
+          options: _riskLabels,
+          selected: _session.riskFactors,
+          onToggle: (key) => setState(() {
+            if (_session.riskFactors.contains(key)) {
+              _session.riskFactors.remove(key);
+            } else {
+              _session.riskFactors.add(key);
+            }
+          }),
+          onContinue: _submitRiskFactors,
+        );
+      case _Stage.complete:
+        return _completePanel();
+    }
+  }
+
+  Widget _chipRow(List<(String, VoidCallback)> items) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: items.map((entry) {
+          return ActionChip(
+            label: Text(entry.$1),
+            onPressed: entry.$2,
+            backgroundColor: Colors.white,
+            side: const BorderSide(color: AppColors.border),
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _completePanel() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/labs'),
+              icon: const Icon(Icons.science_outlined, size: 18),
+              label: const Text('Add lab values (optional)'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/scan'),
+              icon: const Icon(Icons.camera_alt_rounded, size: 18),
+              label: const Text('Continue to Body Scan'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextInput() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _freeText,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _handleFreeText(),
+              minLines: 1,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Ask Ava anything...',
+                hintStyle: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
+                filled: true,
+                fillColor: AppColors.background,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: _isTyping ? null : _handleFreeText,
+            icon: const Icon(Icons.arrow_upward_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── MULTI-SELECT PANEL ────────────────────────────────────────
+
+class _MultiSelectPanel extends StatelessWidget {
+  final String title;
+  final Map<String, String> options;
+  final Set<String> selected;
+  final void Function(String key) onToggle;
+  final VoidCallback onContinue;
+
+  const _MultiSelectPanel({
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.onToggle,
+    required this.onContinue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${selected.length} selected',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              shrinkWrap: true,
+              children: options.entries.map((entry) {
+                final isOn = selected.contains(entry.key);
+                return CheckboxListTile(
+                  dense: true,
+                  value: isOn,
+                  onChanged: (_) => onToggle(entry.key),
+                  title: Text(
+                    entry.value,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  activeColor: AppColors.primary,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: onContinue,
+                child: const Text('Continue'),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

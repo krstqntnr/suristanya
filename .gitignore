@@ -1,1 +1,17 @@
-suristanya_api/models/ 
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# ML models (huge files — keep locally)
+models/
+*.h5
+*.pkl
+*.keras
+
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies

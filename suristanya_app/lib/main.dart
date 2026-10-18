@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'services/api_settings.dart';
 import 'services/auth_store.dart';
 import 'services/scan_history_store.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connection_banner.dart';
+import 'screens/api_settings_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/signin_screen.dart';
 import 'screens/signup_screen.dart';
@@ -20,6 +22,7 @@ import 'screens/privacy_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiSettings.instance.load();
   await AuthStore.instance.load();
   await ScanHistoryStore.instance.load();
   runApp(const SuristanyaApp());
@@ -54,6 +57,7 @@ class SuristanyaApp extends StatelessWidget {
         '/profile': (context) => const ProfileScreen(),
         '/history': (context) => const HistoryScreen(),
         '/privacy': (context) => const PrivacyScreen(),
+        '/backend': (context) => const ApiSettingsScreen(),
       },
     );
   }

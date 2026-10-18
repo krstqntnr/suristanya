@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/body_scan.dart';
 import '../theme/app_theme.dart';
 import '../widgets/body_scan_slot.dart';
+import 'camera_capture_screen.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -30,6 +31,17 @@ class _ScanScreenState extends State<ScanScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Could not pick image: $e')));
+    }
+  }
+
+  /// Opens the guided in-app camera with a body-part-specific overlay.
+  Future<void> _openCamera(BodyPart part) async {
+    final file = await Navigator.push<XFile>(
+      context,
+      MaterialPageRoute(builder: (_) => CameraCaptureScreen(part: part)),
+    );
+    if (file != null && mounted) {
+      setState(() => _images[part] = file);
     }
   }
 
@@ -72,7 +84,7 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
             const SizedBox(height: 4),
 
-            // Take a Photo
+            // Take a Photo (guided camera)
             ListTile(
               leading: Container(
                 width: 40,
@@ -91,15 +103,13 @@ class _ScanScreenState extends State<ScanScreen> {
                 'Take a Photo',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              subtitle: Text(
-                kIsWeb
-                    ? 'Use your device camera (or file dialog on desktop)'
-                    : 'Open the camera',
-                style: const TextStyle(fontSize: 11),
+              subtitle: const Text(
+                'Guided camera with alignment overlay',
+                style: TextStyle(fontSize: 11),
               ),
               onTap: () {
                 Navigator.pop(ctx);
-                _pickImage(part, ImageSource.camera);
+                _openCamera(part);
               },
             ),
 

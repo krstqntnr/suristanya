@@ -45,6 +45,7 @@ class ProfileScreen extends StatelessWidget {
     if (confirmed != true) return;
 
     await AuthStore.instance.clear();
+    await ScanHistoryStore.instance.clear();
 
     if (!context.mounted) return;
     Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -223,15 +224,34 @@ class ProfileScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: _ActionRow(
-                  icon: Icons.lock_outline_rounded,
-                  label: 'Privacy & Data',
-                  onTap: () async {
-                    await Navigator.pushNamed(context, '/privacy');
-                    if (context.mounted) {
-                      (context as Element).markNeedsBuild();
-                    }
-                  },
+                child: Column(
+                  children: [
+                    _ActionRow(
+                      icon: Icons.dns_rounded,
+                      label: 'Backend URL',
+                      onTap: () async {
+                        await Navigator.pushNamed(context, '/backend');
+                        if (context.mounted) {
+                          (context as Element).markNeedsBuild();
+                        }
+                      },
+                    ),
+                    const Divider(
+                      height: 1,
+                      color: AppColors.border,
+                      indent: 56,
+                    ),
+                    _ActionRow(
+                      icon: Icons.lock_outline_rounded,
+                      label: 'Privacy & Data',
+                      onTap: () async {
+                        await Navigator.pushNamed(context, '/privacy');
+                        if (context.mounted) {
+                          (context as Element).markNeedsBuild();
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
