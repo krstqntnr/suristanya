@@ -41,11 +41,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
-
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
     _startProgress();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runAll());
   }
@@ -77,32 +73,24 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     }
 
     try {
-      // 1. Read image bytes
       final imageBytes = <String, List<int>>{};
       for (final entry in args.entries) {
         final bytes = await entry.value.readAsBytes();
         imageBytes[entry.key.apiKey] = bytes;
       }
 
-      // 2. Run ML prediction (image analysis)
-      final predictionResponse = await ApiService.instance.predictFromBytes(
-        images: imageBytes,
-      );
+      final predictionResponse = await ApiService.instance.predictFromBytes(images: imageBytes);
 
-      // 3. Run clinical rule engine (questionnaire + labs)
       ScreeningResult? screeningResponse;
       try {
-        screeningResponse = await ApiService.instance.assessScreen(
-          ScreeningSession.instance.toJson(),
-        );
-      } catch (_) {
-        screeningResponse = null;
-      }
+        screeningResponse = await ApiService.instance.assessScreen(ScreeningSession.instance.toJson());
+      } catch (_) {}
 
-      // 4. Save to history (with screening if available)
+      // SAVE IMAGES TO DATABASE
       await ScanHistoryStore.instance.add(
         apiResponse: predictionResponse,
         screening: screeningResponse,
+        images: imageBytes, 
       );
 
       if (!mounted) return;
@@ -123,9 +111,11 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     if (_progress < 100) return;
     if (_predictionResponse == null) return;
 
-    Navigator.pushReplacementNamed(
+    // FIXES BACK BUTTON: Clears Scan screen, returns to Dashboard when Back is pressed
+    Navigator.pushNamedAndRemoveUntil(
       context,
       '/results',
+      ModalRoute.withName('/dashboard'), 
       arguments: {
         'predictions': _predictionResponse,
         'screening': _screeningResponse,
@@ -159,46 +149,20 @@ class _ProcessingScreenState extends State<ProcessingScreen>
         children: [
           const Spacer(),
           Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.error_outline_rounded,
-              color: AppColors.danger,
-              size: 48,
-            ),
+            width: 96, height: 96,
+            decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.15), shape: BoxShape.circle),
+            child: const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 48),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'Something went wrong',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+          const Text('Something went wrong', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 13,
-              height: 1.4,
-            ),
-          ),
+          Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.4)),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
               onPressed: _retry,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.primary,
-              ),
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.primary),
               child: const Text('Back to Scan'),
             ),
           ),
@@ -214,29 +178,12 @@ class _ProcessingScreenState extends State<ProcessingScreen>
       child: Column(
         children: [
           const Spacer(),
-
-          const Text(
-            'Analyzing Results',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
+          const Text('Analyzing Results', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
           const SizedBox(height: 8),
-          Text(
-            'Analyzing your health markers',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 13,
-            ),
-          ),
+          Text('Analyzing your health markers', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13)),
           const SizedBox(height: 40),
-
           SizedBox(
-            width: 240,
-            height: 240,
+            width: 240, height: 240,
             child: AnimatedBuilder(
               animation: _controller,
               builder: (context, _) {
@@ -245,126 +192,49 @@ class _ProcessingScreenState extends State<ProcessingScreen>
                   children: [
                     ...List.generate(3, (i) {
                       return Container(
-                        width: 80.0 + i * 60,
-                        height: 80.0 + i * 60,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.accent.withValues(
-                              alpha: 0.15 + i * 0.08,
-                            ),
-                            width: 1.5,
-                          ),
-                        ),
+                        width: 80.0 + i * 60, height: 80.0 + i * 60,
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.accent.withValues(alpha: 0.15 + i * 0.08), width: 1.5)),
                       );
                     }),
                     Transform.rotate(
                       angle: _controller.value * 2 * math.pi,
                       child: Container(
-                        width: 220,
-                        height: 220,
+                        width: 220, height: 220,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: SweepGradient(
-                            colors: [
-                              AppColors.accent.withValues(alpha: 0.0),
-                              AppColors.accent.withValues(alpha: 0.55),
-                              AppColors.accent.withValues(alpha: 0.0),
-                            ],
+                            colors: [AppColors.accent.withValues(alpha: 0.0), AppColors.accent.withValues(alpha: 0.55), AppColors.accent.withValues(alpha: 0.0)],
                             stops: const [0.0, 0.15, 0.3],
                           ),
                         ),
                       ),
                     ),
                     Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.accent.withValues(alpha: 0.15),
-                        border: Border.all(color: AppColors.accent, width: 2),
-                      ),
-                      child: const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
+                      width: 76, height: 76,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent.withValues(alpha: 0.15), border: Border.all(color: AppColors.accent, width: 2)),
+                      child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 32),
                     ),
-                    ..._orbitIcons(),
                   ],
                 );
               },
             ),
           ),
-
           const SizedBox(height: 40),
-
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: _progress / 100,
-              minHeight: 6,
-              color: AppColors.accent,
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
-            ),
+            child: LinearProgressIndicator(value: _progress / 100, minHeight: 6, color: AppColors.accent, backgroundColor: Colors.white.withValues(alpha: 0.1)),
           ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _steps[_stepIndex],
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                '$_progress%',
-                style: const TextStyle(
-                  color: AppColors.accent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+              Text(_steps[_stepIndex], style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12, fontWeight: FontWeight.w600)),
+              Text('$_progress%', style: const TextStyle(color: AppColors.accent, fontSize: 13, fontWeight: FontWeight.w800)),
             ],
           ),
-
           const Spacer(),
         ],
       ),
     );
-  }
-
-  List<Widget> _orbitIcons() {
-    final icons = [
-      Icons.sentiment_satisfied_alt_rounded,
-      Icons.back_hand_rounded,
-      Icons.remove_red_eye_rounded,
-      Icons.ads_click_rounded,
-    ];
-    const radius = 100.0;
-    return List.generate(icons.length, (i) {
-      final angle =
-          _controller.value * 2 * math.pi + (i * 2 * math.pi / icons.length);
-      return Transform.translate(
-        offset: Offset(radius * math.cos(angle), radius * math.sin(angle)),
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
-          ),
-          child: Icon(
-            icons[i],
-            color: Colors.white.withValues(alpha: 0.9),
-            size: 16,
-          ),
-        ),
-      );
-    });
   }
 }

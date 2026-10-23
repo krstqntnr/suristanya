@@ -54,5 +54,8 @@ class Scan(db.Model):
     # JSON blobs preserve the exact API shape the Flutter client uses
     predictions_json = db.Column(db.Text, nullable=False, default="[]")
     screening_json = db.Column(db.Text, nullable=True)
+    
+    # ADDED THIS LINE:
+    images_json = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

@@ -1,6 +1,9 @@
 import os
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 
@@ -16,13 +19,20 @@ app = Flask(__name__)
 CORS(app)
 
 # ── Database ─────────────────────────────────────────────────────
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH}"
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    print("[startup] Using PostgreSQL database from DATABASE_URL")
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH}"
+    print(f"[startup] Using SQLite database at {DB_PATH}")
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
 with app.app_context():
     db.create_all()
-    print(f"[startup] Database ready at {DB_PATH}")
+    print("[startup] Database tables are ready.")
 
 # ── ML models ────────────────────────────────────────────────────
 print("=" * 55)
@@ -41,21 +51,13 @@ app.register_blueprint(scans_bp, url_prefix="/scans")
 
 @app.route("/")
 def index():
-    return jsonify({
-        "status": "ok",
-        "service": "Suristanya API",
-        "version": "0.3.0",
-    })
+    return jsonify({"status": "ok", "service": "Suristanya API", "version": "0.3.0"})
 
 
 @app.route("/health")
 def health():
-    return jsonify({
-        "status": "healthy",
-        "models_loaded": get_health_status(),
-    })
+    return jsonify({"status": "healthy", "models_loaded": get_health_status()})
 
 
 if __name__ == "__main__":
-    # use_reloader=False to avoid loading 18 model files twice
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)

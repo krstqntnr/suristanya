@@ -36,42 +36,34 @@ class _SignInScreenState extends State<SignInScreen> {
         password: _passwordController.text,
       );
 
-      // Save the session
       await AuthStore.instance.save(
         token: result.token,
         userId: result.userId,
         name: result.name,
         email: result.email,
+        age: '25', // Fallback for existing accounts
       );
+
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Welcome back, ${result.name}!'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.success,
-        ),
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
+        (route) => false,
       );
-
-      Navigator.pushReplacementNamed(context, '/chat');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.danger,
-        ),
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.danger),
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not reach server. Is Flask running?'),
-          behavior: SnackBarBehavior.floating,
+          content: Text('Could not reach server.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -97,8 +89,6 @@ class _SignInScreenState extends State<SignInScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 16),
-
-                // Header
                 Container(
                   width: 72,
                   height: 72,
@@ -115,7 +105,6 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
                 const Text(
                   'Welcome back',
                   style: TextStyle(
@@ -131,13 +120,11 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Email
                 _FieldLabel('Email'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
                   decoration: _inputDecoration(
                     hint: 'you@example.com',
                     icon: Icons.mail_outline_rounded,
@@ -154,13 +141,11 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
                 const SizedBox(height: 18),
 
-                // Password
                 _FieldLabel('Password'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _signIn(),
                   decoration: _inputDecoration(
                     hint: 'At least 6 characters',
@@ -187,8 +172,6 @@ class _SignInScreenState extends State<SignInScreen> {
                     return null;
                   },
                 ),
-
-                // Forgot password
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -205,7 +188,6 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Sign In button
                 FilledButton(
                   onPressed: _isLoading ? null : _signIn,
                   child: _isLoading
@@ -221,35 +203,6 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Divider
-                Row(
-                  children: const [
-                    Expanded(child: Divider(color: AppColors.border)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'OR',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: AppColors.border)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Continue without account
-                OutlinedButton(
-                  onPressed: () =>
-                      Navigator.pushReplacementNamed(context, '/chat'),
-                  child: const Text('Continue as Guest'),
-                ),
-                const SizedBox(height: 24),
-
-                // Sign up link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -323,7 +276,6 @@ class _SignInScreenState extends State<SignInScreen> {
 class _FieldLabel extends StatelessWidget {
   final String text;
   const _FieldLabel(this.text);
-
   @override
   Widget build(BuildContext context) {
     return Text(

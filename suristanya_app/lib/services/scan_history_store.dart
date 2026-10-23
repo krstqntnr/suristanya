@@ -1,19 +1,11 @@
-import 'dart:async';
 import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/prediction.dart';
 import '../models/scan_record.dart';
 import '../models/screening_result.dart';
 import 'api_service.dart';
 import 'auth_store.dart';
 
-/// Persists scan history.
-///
-/// Strategy:
-///   • If signed in → server is source of truth; local cache is a fallback.
-///   • If guest    → local SharedPreferences only.
 class ScanHistoryStore {
   ScanHistoryStore._();
   static final ScanHistoryStore instance = ScanHistoryStore._();
@@ -28,7 +20,6 @@ class ScanHistoryStore {
   bool get isEmpty => _records.isEmpty;
   bool get isLoaded => _loaded;
 
-  /// Load the local cache. Fast and synchronous. Does not hit the network.
   Future<void> load() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
@@ -36,13 +27,7 @@ class ScanHistoryStore {
     if (raw != null && raw.isNotEmpty) {
       try {
         final list = jsonDecode(raw) as List;
-        _records
-          ..clear()
-          ..addAll(
-            list.map(
-              (e) => ScanRecord.fromJson((e as Map).cast<String, dynamic>()),
-            ),
-          );
+        _records..clear()..addAll(list.map((e) => ScanRecord.fromJson((e as Map).cast<String, dynamic>())));
       } catch (_) {
         _records.clear();
       }
@@ -50,68 +35,51 @@ class ScanHistoryStore {
     _loaded = true;
   }
 
-  /// Pull the latest scan list from the server. Silent on failure.
-  /// Call this from screens that want fresh data (e.g. HistoryScreen).
   Future<void> refreshFromServer() async {
     if (!AuthStore.instance.isSignedIn) return;
     try {
       final scans = await ApiService.instance.listScans(limit: _maxRecords);
-      _records
-        ..clear()
-        ..addAll(scans.map(ScanRecord.fromJson));
+      _records..clear()..addAll(scans.map(ScanRecord.fromJson));
       await _persist();
-    } catch (_) {
-      // Keep local cache — offline or server down.
-    }
+    } catch (_) {}
   }
 
-  /// Save a new scan. Tries the server first when signed in.
   Future<ScanRecord> add({
     required Map<String, dynamic> apiResponse,
     ScreeningResult? screening,
+    Map<String, List<int>>? images,
   }) async {
-    final summaryJson =
-        (apiResponse['summary'] as Map?)?.cast<String, dynamic>() ?? {};
+    final summaryJson = (apiResponse['summary'] as Map?)?.cast<String, dynamic>() ?? {};
     final predictionsJson = (apiResponse['predictions'] as List?) ?? [];
-
     final timestamp = DateTime.now();
 
     if (AuthStore.instance.isSignedIn) {
       try {
         final saved = await ApiService.instance.createScan(
           summary: summaryJson,
-          predictions: predictionsJson
-              .map((p) => (p as Map).cast<String, dynamic>())
-              .toList(),
+          predictions: predictionsJson.map((p) => (p as Map).cast<String, dynamic>()).toList(),
           screening: screening?.toJson(),
           timestamp: timestamp.toIso8601String(),
+          images: images,
         );
         final record = ScanRecord.fromJson(saved);
         _records.insert(0, record);
-        if (_records.length > _maxRecords) {
-          _records.removeRange(_maxRecords, _records.length);
-        }
+        if (_records.length > _maxRecords) _records.removeRange(_maxRecords, _records.length);
         await _persist();
         return record;
-      } catch (_) {
-        // Fall through to local-only save.
-      }
+      } catch (_) {}
     }
 
-    // Local-only path (guest, or server unreachable)
     final record = ScanRecord(
       id: timestamp.microsecondsSinceEpoch.toString(),
       timestamp: timestamp,
       summary: HealthSummary.fromJson(summaryJson),
-      predictions: predictionsJson
-          .map((p) => Prediction.fromJson((p as Map).cast<String, dynamic>()))
-          .toList(),
+      predictions: predictionsJson.map((p) => Prediction.fromJson((p as Map).cast<String, dynamic>())).toList(),
       screening: screening,
     );
+
     _records.insert(0, record);
-    if (_records.length > _maxRecords) {
-      _records.removeRange(_maxRecords, _records.length);
-    }
+    if (_records.length > _maxRecords) _records.removeRange(_maxRecords, _records.length);
     await _persist();
     return record;
   }
@@ -119,36 +87,23 @@ class ScanHistoryStore {
   Future<void> updateNote(String id, String note) async {
     final idx = _records.indexWhere((r) => r.id == id);
     if (idx == -1) return;
-
     _records[idx] = _records[idx].copyWith(note: note.trim());
     await _persist();
-
-    if (AuthStore.instance.isSignedIn) {
-      try {
-        await ApiService.instance.updateScanNote(id, note.trim());
-      } catch (_) {}
-    }
   }
 
   Future<void> remove(String id) async {
     _records.removeWhere((r) => r.id == id);
     await _persist();
-
     if (AuthStore.instance.isSignedIn) {
-      try {
-        await ApiService.instance.deleteScan(id);
-      } catch (_) {}
+      try { await ApiService.instance.deleteScan(id); } catch (_) {}
     }
   }
 
   Future<void> clear() async {
     _records.clear();
     await _persist();
-
     if (AuthStore.instance.isSignedIn) {
-      try {
-        await ApiService.instance.clearScans();
-      } catch (_) {}
+      try { await ApiService.instance.clearScans(); } catch (_) {}
     }
   }
 
