@@ -5,7 +5,7 @@ __pycache__/
 .env
 
 # ML models (huge files — keep locally)
-models/
+suristanya_api/models/
 *.h5
 *.pkl
 *.keras
